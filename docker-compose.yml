@@ -1,0 +1,39 @@
+# ThreatWatch - docker compose up -d
+#   Optional profiles:
+#     --profile tor       adds a Tor SOCKS proxy for .onion monitoring (set TW_TOR_PROXY=socks5://tor:9050)
+#     --profile postgres  adds PostgreSQL (set TW_DATABASE_URL=postgresql+psycopg://threatwatch:threatwatch@db/threatwatch)
+services:
+  threatwatch:
+    build: .
+    image: threatwatch:1.0.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"   # bind to localhost; put a TLS reverse proxy in front for remote access
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TW_HOST: 0.0.0.0
+      TW_DATABASE_URL: ${TW_DATABASE_URL:-sqlite:////data/threatwatch.db}
+    volumes:
+      - threatwatch-data:/data
+
+  tor:
+    profiles: ["tor"]
+    build: ./docker/tor
+    restart: unless-stopped
+
+  db:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: threatwatch
+      POSTGRES_PASSWORD: threatwatch   # change me
+      POSTGRES_DB: threatwatch
+    volumes:
+      - threatwatch-pg:/var/lib/postgresql/data
+
+volumes:
+  threatwatch-data:
+  threatwatch-pg:

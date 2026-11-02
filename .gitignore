@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+data/*.db
+data/*.db-*
+data/reports/
+*.egg-info/
+build/
+dist/
+data/attack_techniques.json

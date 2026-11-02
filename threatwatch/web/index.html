@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThreatWatch</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z' fill='%232a78d6'/%3E%3Ccircle cx='16' cy='15' r='5' fill='none' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    try { const t = localStorage.getItem("tw.theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z" fill="var(--accent)"/><circle cx="16" cy="15" r="5" fill="none" stroke="#fff" stroke-width="2.5"/></svg>
+        <span>ThreatWatch</span>
+      </a>
+      <nav aria-label="Main">
+        <div class="nav-group">Overview</div>
+        <a href="#/" data-route="dashboard"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3zm0 8h8v-6H3zm10 0h8V11h-8zm0-18v6h8V3z"/></svg>Dashboard</a>
+        <a href="#/alerts" data-route="alerts"><svg viewBox="0 0 24 24"><path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2m6-6V11c0-3.1-1.6-5.6-4.5-6.3V4a1.5 1.5 0 0 0-3 0v.7C7.6 5.4 6 7.9 6 11v5l-2 2v1h16v-1z"/></svg>Alerts<span class="nav-count" id="nav-alerts"></span></a>
+        <a href="#/watchlist" data-route="watchlist"><svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.7 7.6 1 12c1.7 4.4 6 7.5 11 7.5s9.3-3.1 11-7.5c-1.7-4.4-6-7.5-11-7.5M12 17a5 5 0 1 1 0-10 5 5 0 0 1 0 10m0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/></svg>Watchlist</a>
+        <div class="nav-group">Modules</div>
+        <a href="#/darkweb" data-route="darkweb"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m6.9 6h-3a15.7 15.7 0 0 0-1.4-3.6A8 8 0 0 1 18.9 8M12 4c.8 1.2 1.5 2.5 1.9 4h-3.8c.4-1.5 1.1-2.8 1.9-4M4.3 14a8.2 8.2 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4zm.8 2h3c.3 1.3.8 2.5 1.4 3.6A8 8 0 0 1 5.1 16M8 8H5.1a8 8 0 0 1 4.3-3.6C8.8 5.5 8.4 6.7 8 8m4 12c-.8-1.2-1.5-2.5-1.9-4h3.8c-.4 1.5-1.1 2.8-1.9 4m2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4m.3 5.6c.6-1.1 1.1-2.3 1.4-3.6h3a8 8 0 0 1-4.4 3.6m1.7-5.6a16.5 16.5 0 0 0 0-4h3.4a8.2 8.2 0 0 1 0 4z"/></svg>Dark Web</a>
+        <a href="#/intel" data-route="intel"><svg viewBox="0 0 24 24"><path d="M4 4h16v2H4zm0 4h10v2H4zm0 4h16v2H4zm0 4h10v2H4zm12 0 2 2 4-4-1.4-1.4-2.6 2.6-.6-.6z"/></svg>Threat Intel</a>
+        <a href="#/attack" data-route="attack"><svg viewBox="0 0 24 24"><path d="M3 3h5v5H3zm6.5 0h5v5h-5zM16 3h5v5h-5zM3 9.5h5v5H3zm6.5 0h5v5h-5zM16 9.5h5v5h-5zM3 16h5v5H3zm6.5 0h5v5h-5zM16 16h5v5h-5z"/></svg>ATT&amp;CK Matrix</a>
+        <a href="#/phishing" data-route="phishing"><svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5zm-1 16-4-4 1.4-1.4L11 14.2l5.6-5.6L18 10z"/></svg>Anti-Phishing</a>
+        <a href="#/asm" data-route="asm"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5zm-10 10 10 5 10-5-2.4-1.2L12 14.6l-7.6-3.8zm0 5 10 5 10-5-2.4-1.2L12 19.6l-7.6-3.8z"/></svg>Attack Surface</a>
+        <div class="nav-group">System</div>
+        <a href="#/settings" data-route="settings"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7" transform="translate(-1 0)"/></svg>Settings</a>
+        <a href="/api/docs" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3zm8 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>API docs</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div id="jobs-indicator" class="jobs-indicator" hidden><span class="spin"></span><span id="jobs-text"></span></div>
+        <button class="btn btn-ghost btn-sm" id="theme-toggle" type="button" aria-label="Toggle colour theme">Toggle dark / light</button>
+      </div>
+    </aside>
+    <div class="main-col">
+      <header class="topbar">
+        <button class="btn btn-ghost btn-icon" id="menu-toggle" aria-label="Open menu" type="button">☰</button>
+        <form id="global-search" class="global-search" role="search">
+          <input type="search" name="q" placeholder="Look up an IP, domain, URL, hash or CVE…" aria-label="Indicator lookup" autocomplete="off">
+        </form>
+      </header>
+      <main id="main" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <aside id="drawer" class="drawer" aria-hidden="true" aria-labelledby="drawer-title">
+    <div class="drawer-head"><h2 id="drawer-title"></h2><button class="btn btn-ghost btn-icon" id="drawer-close" aria-label="Close" type="button">✕</button></div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+  <dialog id="modal" class="modal" aria-labelledby="modal-title">
+    <div class="modal-head"><h2 id="modal-title"></h2><button class="btn btn-ghost btn-icon" id="modal-close" aria-label="Close" type="button">✕</button></div>
+    <div id="modal-body" class="modal-body"></div>
+  </dialog>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="tip" class="tip" hidden></div>
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

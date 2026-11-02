@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://threatwatch.local/schemas/ioc.v1.schema.json",
+  "title": "ThreatWatch IOC export (threatwatch.ioc.v1)",
+  "type": "object",
+  "required": ["schema", "generated_at", "count", "indicators"],
+  "properties": {
+    "schema": {"const": "threatwatch.ioc.v1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "count": {"type": "integer", "minimum": 0},
+    "indicators": {"type": "array", "items": {"$ref": "#/$defs/indicator"}}
+  },
+  "$defs": {
+    "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+    "indicator": {
+      "type": "object",
+      "required": ["id", "type", "value", "score", "severity", "confidence", "threat_types", "malware_families",
+                   "tags", "attack", "sources", "source_count", "tlp", "first_seen", "last_seen", "active", "stix_id"],
+      "properties": {
+        "id": {"type": "integer"},
+        "type": {"enum": ["ipv4", "ipv6", "cidr", "domain", "url", "md5", "sha1", "sha256", "email", "cve", "x509-sha1"]},
+        "value": {"type": "string", "minLength": 1},
+        "score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "severity": {"$ref": "#/$defs/severity"},
+        "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+        "threat_types": {"type": "array", "items": {"type": "string"}},
+        "malware_families": {"type": "array", "items": {"type": "string"}},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "attack": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "tactics", "url"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^T\\d{4}(\\.\\d{3})?$"},
+              "name": {"type": "string"},
+              "tactics": {"type": "array", "items": {"type": "string"}},
+              "url": {"type": "string", "format": "uri"}
+            }
+          }
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["feed", "confidence", "first_seen", "last_seen"],
+            "properties": {
+              "feed": {"type": "string"},
+              "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+              "reference": {"type": ["string", "null"]},
+              "first_seen": {"type": "string", "format": "date-time"},
+              "last_seen": {"type": "string", "format": "date-time"}
+            }
+          }
+        },
+        "source_count": {"type": "integer", "minimum": 1},
+        "tlp": {"enum": ["clear", "white", "green", "amber", "red"]},
+        "description": {"type": ["string", "null"]},
+        "context": {"type": "object"},
+        "first_seen": {"type": "string", "format": "date-time"},
+        "last_seen": {"type": "string", "format": "date-time"},
+        "last_activity": {"type": ["string", "null"]},
+        "active": {"type": "boolean"},
+        "stix_id": {"type": "string", "pattern": "^(indicator|vulnerability)--[0-9a-f-]{36}$"}
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "threatwatch"
+version = "1.0.0"
+description = "Standalone external threat intelligence platform: dark web monitoring, threat intel feeds, anti-phishing and attack surface management."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sqlalchemy>=2.0",
+    "httpx[socks]>=0.27",
+    "dnspython>=2.6",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "cryptography>=42",
+    "tldextract>=5.1",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "stix2>=3.0"]
+postgres = ["psycopg[binary]>=3.1"]
+
+[project.scripts]
+threatwatch = "threatwatch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["threatwatch*"]
+
+[tool.setuptools.package-data]
+threatwatch = ["data/*", "web/*", "web/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
