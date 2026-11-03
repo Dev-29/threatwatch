@@ -1,6 +1,7 @@
-// App shell: hash router, theme, API-key prompt, global IOC lookup, background-job indicator.
-import { api, setKey, getKey } from "./api.js";
-import { $, $$, closeDrawer, closeModal, html, mount, openModal, spinner, toast } from "./ui.js";
+// App shell: hash router, theme, sign-in, global IOC lookup, background-job indicator.
+import { api, getKey } from "./api.js";
+import { authScreenVisible, ensureSignedIn, signOut } from "./auth.js";
+import { $, $$, closeDrawer, closeModal, html, mount, spinner, toast } from "./ui.js";
 import { installTooltips } from "./charts.js";
 
 const ROUTES = {
@@ -73,29 +74,24 @@ function initTheme() {
 }
 
 // ---------------------------------------------------------------- auth
-let authPromptOpen = false;
-function promptKey() {
-  if (authPromptOpen) return;
-  authPromptOpen = true;
-  const body = openModal("API key required", html`
-    <p class="muted">This ThreatWatch instance is protected by <code>TW_API_KEY</code>. Enter the key to continue.
-    It is stored only in this browser.</p>
-    <form id="key-form"><label class="field"><span>API key</span><input name="key" type="password" required autocomplete="off"></label>
-    <div class="modal-foot"><button class="btn btn-primary">Save</button></div></form>`);
-  $("input", body).focus();
-  $("#key-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    setKey(new FormData(e.target).get("key").trim());
-    authPromptOpen = false;
-    closeModal();
-    render();
-  });
-  $("#modal").addEventListener("close", () => { authPromptOpen = false; }, { once: true });
+let reauthPending = false;
+async function onAuthRequired() {
+  if (reauthPending || authScreenVisible()) return;
+  reauthPending = true;
+  closeDrawer();
+  if ($("#modal").open) closeModal();
+  try {
+    await ensureSignedIn("Your session has ended. Sign in again to continue.");
+  } finally {
+    reauthPending = false;
+  }
+  render();
 }
 
 // ---------------------------------------------------------------- background jobs + alert badge
 let lastRunning = new Set();
 async function pollStatus() {
+  if (authScreenVisible()) return;
   try {
     const [jobs, alerts] = await Promise.all([
       api("/jobs", { params: { limit: 1 } }),
@@ -123,11 +119,11 @@ export function jobStarted(kind, target) {
 }
 
 // ---------------------------------------------------------------- boot
-function boot() {
+async function boot() {
   initTheme();
   installTooltips();
-  window.addEventListener("hashchange", render);
-  window.addEventListener("tw:auth-required", promptKey);
+  window.addEventListener("tw:auth-required", onAuthRequired);
+  $("#sign-out").addEventListener("click", signOut);
   $("#drawer-close").addEventListener("click", closeDrawer);
   $("#modal-close").addEventListener("click", closeModal);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
@@ -137,6 +133,13 @@ function boot() {
     const q = new FormData(e.target).get("q").trim();
     if (q) location.hash = `#/intel?tab=lookup&text=${encodeURIComponent(q)}`;
   });
+  try {
+    await ensureSignedIn();
+  } catch (err) {
+    mount($("#main"), html`<div class="empty">Cannot reach the ThreatWatch server: ${err.message}</div>`);
+    return;
+  }
+  window.addEventListener("hashchange", render);
   render();
   pollStatus();
   setInterval(pollStatus, 5000);

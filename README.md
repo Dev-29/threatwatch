@@ -49,7 +49,7 @@ docker compose up -d                   # http://127.0.0.1:8000
 
 Then go to **Watchlist**, add your primary domain, your executives (name + email addresses), key mailboxes and brand names, and press **Run scan** on each module. Feed collection, dark-web scans and look-alike scans then run on a schedule.
 
-> **Before monitoring for real:** set `TW_API_KEY` if the instance is reachable by anyone else. Only run *active* ASM scans against assets you own or are authorised to test. See [docs/SECURITY.md](docs/SECURITY.md).
+> **Before monitoring for real:** create an admin account (`threatwatch user add <name> --role admin`, or use the setup screen on first visit). Until a user or `TW_API_KEY` exists, the instance is open to anyone who can reach it. Only run *active* ASM scans against assets you own or are authorised to test. See [docs/SECURITY.md](docs/SECURITY.md).
 
 ## What works with zero API keys
 
@@ -77,6 +77,7 @@ threatwatch export --format stix --min-score 65 -o iocs.stix.json
 threatwatch add-asset executive "Jane Doe" --email jane@example.com --criticality critical
 threatwatch attack-sync                                 # full MITRE ATT&CK catalogue
 threatwatch seed-demo [--reset]
+threatwatch user add alice --role admin                 # also: list, passwd, role, disable, enable, delete
 ```
 
 ## Documentation

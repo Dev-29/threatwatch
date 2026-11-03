@@ -8,7 +8,9 @@ The interactive OpenAPI documentation is served by every instance at **`/api/doc
 
 ## Authentication
 
-When `TW_API_KEY` is set, every `/api/v1/*` and `/taxii2/*` request needs the key in one of three forms:
+Every `/api/v1/*` and `/taxii2/*` request must be authenticated in one of two ways.
+
+**API key (scripts, SIEM/SOAR, TAXII clients).** Set `TW_API_KEY` and send it in one of three forms:
 
 ```
 X-API-Key: <key>
@@ -16,11 +18,30 @@ Authorization: Bearer <key>
 ?api_key=<key>              # for browser download links only; avoid in logs
 ```
 
-`GET /api/health` is always open, for load-balancer health checks.
+The API key has full access, including user management.
+
+**User session (browsers).** `POST /api/v1/auth/login` with `{"username": ..., "password": ...}` sets an HttpOnly,
+`SameSite=Strict` session cookie. Requests that use the cookie and change data (`POST`/`PATCH`/`PUT`/`DELETE`) must also
+send `X-Requested-With: ThreatWatch` (CSRF protection; the bundled UI does this).
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /auth/me` | Current identity: `mode` is `session`, `api_key`, `open` or `null`; `setup_required` while no users exist |
+| `POST /auth/login` | Sign in. Five failures per IP and username within 15 min → `429` with `Retry-After` |
+| `POST /auth/logout` | Sign out (revokes the session) |
+| `POST /auth/setup` | Create the first admin. Only while no users exist; needs the API key if `TW_API_KEY` is set |
+| `POST /auth/password` | Change your own password (`current_password`, `new_password`); signs out your other sessions |
+| `GET/POST /users`, `PATCH/DELETE /users/{id}` | User management. Admin role or API key. `PATCH` takes `role`, `disabled` and/or `password` |
+
+Roles: **admin** (everything plus user management), **analyst** (read/write), **viewer** (read-only: any write returns `403`).
+
+If neither `TW_API_KEY` nor any user exists, the API is open (local first-run only). `GET /api/health` is always open,
+for load-balancer health checks.
 
 | Status | Meaning |
 |---|---|
-| 401 | Missing or wrong key |
+| 401 | Not signed in, or missing/wrong API key |
+| 403 | Role not allowed (viewer write, non-admin user management), or missing `X-Requested-With` on a cookie write |
 | 404 | Unknown object |
 | 409 | Conflict: duplicate asset, or job already running |
 | 422 | Validation error |

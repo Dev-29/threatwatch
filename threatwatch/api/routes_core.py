@@ -17,7 +17,7 @@ from ..config import get_settings
 from ..core import jobs
 from ..core.domains import is_valid_hostname, registrable
 from ..db import get_db
-from ..models import Alert, AsmScan, Asset, Exposure, FeedState, Indicator, JobRun, LookalikeDomain, utcnow
+from ..models import Alert, AsmScan, Asset, Exposure, FeedState, Indicator, JobRun, LookalikeDomain, User, utcnow
 from ..modules.intel import attack
 from .common import Page, alert_json, asset_json, job_json, paginate
 
@@ -241,12 +241,15 @@ def list_jobs(kind: str | None = None, page: Page = Depends(), db: Session = Dep
 
 
 @router.get("/settings", tags=["settings"])
-def settings_view():
+def settings_view(db: Session = Depends(get_db)):
     s = get_settings()
+    users = db.scalar(select(func.count(User.id))) or 0
     return {
         "version": __version__,
         "integrations": s.integration_status(),
-        "auth_enabled": bool(s.api_key),
+        "auth_enabled": bool(s.api_key) or users > 0,
+        "auth": {"api_key": bool(s.api_key), "users": users, "session_idle_hours": s.session_idle_hours,
+                 "session_max_days": s.session_max_days},
         "database": s.database_url.split("://")[0],
         "scheduler": {"enabled": s.scheduler_enabled, "feeds_interval_minutes": s.feeds_interval_minutes,
                       "darkweb_interval_hours": s.darkweb_interval_hours,

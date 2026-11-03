@@ -100,7 +100,7 @@ Only list sources you are permitted to access and that your organisation's polic
 
 ## Production deployment (reverse proxy, TLS, systemd)
 
-1. **Set an API key**: `TW_API_KEY=$(openssl rand -hex 32)`. The UI prompts for it once per browser.
+1. **Create the first admin**: `threatwatch user add <name> --role admin` (or use the setup screen the UI shows on first visit). Add teammates under **Settings → Users**. Set `TW_API_KEY=$(openssl rand -hex 32)` as well if scripts or TAXII clients need access.
 2. **Terminate TLS** in a reverse proxy. Example nginx config:
 
    ```nginx

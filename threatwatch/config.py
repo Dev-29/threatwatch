@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     api_key: str | None = None
+    # Browser sessions (user accounts). Sessions expire after this much inactivity.
+    session_idle_hours: float = 12.0
+    # Absolute session lifetime regardless of activity.
+    session_max_days: float = 7.0
+    # Secure flag on the session cookie: "auto" sets it when the request arrived over HTTPS (uvicorn honours
+    # X-Forwarded-Proto from 127.0.0.1 by default), or force "true"/"false".
+    session_cookie_secure: str = "auto"
+    # Failed logins allowed per (client IP, username) within 15 minutes before login is blocked.
+    login_max_failures: int = 5
     log_level: str = "INFO"
     data_dir: str = "./data"  # runtime data (synced ATT&CK catalogue, ...)
 

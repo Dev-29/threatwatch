@@ -9,7 +9,11 @@ All settings are environment variables prefixed with `TW_`. They can also be put
 | `TW_DATABASE_URL` | `sqlite:///./data/threatwatch.db` | SQLAlchemy URL. PostgreSQL: `postgresql+psycopg://user:pass@host:5432/db` |
 | `TW_HOST` | `127.0.0.1` | Bind address for `threatwatch serve` |
 | `TW_PORT` | `8000` | Bind port |
-| `TW_API_KEY` | *(unset)* | When set, `/api/v1/*` and `/taxii2/*` require `X-API-Key: <key>`, `Authorization: Bearer <key>` or `?api_key=<key>`. `/api/health` stays open. |
+| `TW_API_KEY` | *(unset)* | Key for scripts and TAXII clients: `X-API-Key: <key>`, `Authorization: Bearer <key>` or `?api_key=<key>`. Full access. `/api/health` stays open. |
+| `TW_SESSION_IDLE_HOURS` | `12` | Browser sessions expire after this much inactivity |
+| `TW_SESSION_MAX_DAYS` | `7` | Absolute session lifetime, regardless of activity |
+| `TW_SESSION_COOKIE_SECURE` | `auto` | `Secure` flag on the session cookie. `auto` sets it for HTTPS requests, including `X-Forwarded-Proto: https` from a proxy on 127.0.0.1 (uvicorn's default trusted proxy). Set `true` when the proxy runs elsewhere, e.g. another container |
+| `TW_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins per client IP and username within 15 minutes before sign-in is blocked |
 | `TW_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `TW_DATA_DIR` | `./data` | Runtime data (synced ATT&CK catalogue) |
 

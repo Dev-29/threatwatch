@@ -149,6 +149,64 @@ def cmd_add_asset(a):
         print(f"added {a.type} #{asset.id}: {asset.value}")
 
 
+def _read_password(a, prompt: str = "Password") -> str:
+    if getattr(a, "password_stdin", False):
+        return sys.stdin.readline().rstrip("\n")
+    import getpass
+
+    pw = getpass.getpass(f"{prompt}: ")
+    if pw != getpass.getpass(f"{prompt} (again): "):
+        sys.exit("passwords do not match")
+    return pw
+
+
+def cmd_user(a):
+    from sqlalchemy import select
+
+    from .core import auth
+    from .models import User
+
+    create_all()
+    try:
+        with session_scope() as db:
+            if a.action == "list":
+                rows = db.scalars(select(User).order_by(User.username)).all()
+                if not rows:
+                    print("no users yet - create one with: threatwatch user add <username> --role admin")
+                for u in rows:
+                    state = "disabled" if u.disabled else "active"
+                    print(f"{u.username:24} {u.role:8} {state:8} last login: {u.last_login_at or 'never'}")
+                return
+            if a.action == "add":
+                role = a.role or ("admin" if auth.user_count(db) == 0 else "analyst")
+                auth.create_user(db, a.username, _read_password(a), role)
+                print(f"created {role} '{auth.normalize_username(a.username)}'")
+                return
+            user = db.scalar(select(User).where(User.username == a.username.strip().lower()))
+            if user is None:
+                sys.exit(f"no such user: {a.username}")
+            if a.action == "passwd":
+                auth.set_password(db, user, _read_password(a, "New password"))
+                print(f"password changed for '{user.username}'; their sessions were signed out")
+            elif a.action in ("disable", "enable", "delete", "role"):
+                last_admin = user.role == "admin" and not user.disabled and auth.active_admin_count(db) <= 1
+                if last_admin and (a.action in ("disable", "delete") or (a.action == "role" and a.role != "admin")):
+                    sys.exit("refusing: this is the last active admin")
+                if a.action == "delete":
+                    db.delete(user)
+                elif a.action == "role":
+                    if a.role not in auth.ROLES:
+                        sys.exit(f"--role must be one of {', '.join(auth.ROLES)}")
+                    user.role = a.role
+                else:
+                    user.disabled = a.action == "disable"
+                    if user.disabled:
+                        auth.revoke_user_sessions(db, user.id)
+                print(f"{a.action}: '{user.username}' done")
+    except auth.AuthError as e:
+        sys.exit(str(e))
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="threatwatch", description="ThreatWatch external threat intelligence platform")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -202,6 +260,14 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--email", action="append", help="executive email (repeatable)")
     s.set_defaults(fn=cmd_add_asset)
 
+    s = sub.add_parser("user", help="manage web UI user accounts")
+    s.add_argument("action", choices=["add", "list", "passwd", "role", "disable", "enable", "delete"])
+    s.add_argument("username", nargs="?", default="")
+    s.add_argument("--role", choices=["admin", "analyst", "viewer"],
+                   help="for add (default: admin for the first user, else analyst) and role")
+    s.add_argument("--password-stdin", action="store_true", help="read the password from stdin (for scripts)")
+    s.set_defaults(fn=cmd_user)
+
     sub.add_parser("attack-sync", help="download the full MITRE ATT&CK catalogue").set_defaults(fn=cmd_attack_sync)
 
     s = sub.add_parser("seed-demo", help="load a fictional demo organisation with sample data")
@@ -209,6 +275,10 @@ def main(argv: list[str] | None = None) -> None:
     s.set_defaults(fn=cmd_seed_demo)
 
     args = p.parse_args(argv)
+    if args.cmd == "user" and args.action != "list" and not args.username:
+        p.error(f"user {args.action} needs a username")
+    if args.cmd == "user" and args.action == "role" and not args.role:
+        p.error("user role needs --role")
     logging.basicConfig(level=get_settings().log_level.upper(), format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     args.fn(args)

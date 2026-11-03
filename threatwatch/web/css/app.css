@@ -277,3 +277,18 @@ a.stat:hover { border-color: var(--accent); text-decoration: none; }
   .stat-value { font-size: 24px; }
 }
 @media print { .sidebar, .topbar, .actions, .toolbar { display: none !important; } main { padding: 0; } }
+
+/* ---------------------------------------------------------------- sign-in */
+.auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); }
+.auth-card { width: 100%; max-width: 380px; padding: 28px 28px 22px; }
+.auth-card h1 { font-size: 20px; margin: 0 0 4px; }
+.auth-card > p { margin: 0 0 18px; }
+.auth-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; margin-bottom: 20px; }
+.auth-brand svg { width: 26px; height: 26px; }
+.auth-card input { width: 100%; }
+.auth-submit { width: 100%; margin-top: 4px; min-height: 38px; }
+.auth-error { color: var(--sev-critical); font-size: 13px; margin: 0 0 12px; }
+.auth-foot { margin: 16px 0 0; }
+.user-box { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+[hidden] { display: none !important; }

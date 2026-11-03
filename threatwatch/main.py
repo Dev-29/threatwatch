@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, scheduler
-from .api import routes_asm, routes_core, routes_darkweb, routes_intel, routes_phishing
-from .api.common import require_api_key
+from .api import routes_asm, routes_auth, routes_core, routes_darkweb, routes_intel, routes_phishing
+from .api.common import require_auth
 from .config import get_settings
 from .db import create_all
 
@@ -27,7 +27,9 @@ ThreatWatch is a standalone external threat-intelligence platform.
 * **Anti-phishing** - look-alike domain detection and URL analysis.
 * **Attack surface management** - sub-domains, services, certificates, risk report.
 
-Authentication: when `TW_API_KEY` is configured, send it as `X-API-Key` (or `Authorization: Bearer`).
+Authentication: scripts send `TW_API_KEY` as `X-API-Key` (or `Authorization: Bearer`). Browsers sign in with a
+user account (`POST /api/v1/auth/login`) and get an HttpOnly session cookie; cookie-authenticated writes must send
+`X-Requested-With: ThreatWatch`. With no API key and no users configured, the API is open.
 """
 
 
@@ -52,8 +54,9 @@ def create_app(*, start_scheduler: bool | None = None) -> FastAPI:
     app = FastAPI(title="ThreatWatch API", version=__version__, description=DESCRIPTION, lifespan=lifespan,
                   docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 
-    auth = [Depends(require_api_key)]
-    for r in (routes_core.router, routes_darkweb.router, routes_intel.router, routes_phishing.router, routes_asm.router):
+    app.include_router(routes_auth.router, prefix="/api/v1")  # login/setup: handles its own auth
+    auth = [Depends(require_auth)]
+    for r in (routes_auth.users, routes_core.router, routes_darkweb.router, routes_intel.router, routes_phishing.router, routes_asm.router):
         app.include_router(r, prefix="/api/v1", dependencies=auth)
     app.include_router(routes_intel.taxii, dependencies=auth)
 

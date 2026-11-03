@@ -35,6 +35,8 @@
         <a href="/api/docs" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3zm8 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>API docs</a>
       </nav>
       <div class="sidebar-foot">
+        <div id="user-box" class="user-box" hidden><span id="user-name" class="user-name"></span>
+          <button class="btn btn-ghost btn-sm" id="sign-out" type="button">Sign out</button></div>
         <div id="jobs-indicator" class="jobs-indicator" hidden><span class="spin"></span><span id="jobs-text"></span></div>
         <button class="btn btn-ghost btn-sm" id="theme-toggle" type="button" aria-label="Toggle colour theme">Toggle dark / light</button>
       </div>
@@ -49,6 +51,8 @@
       <main id="main" tabindex="-1"></main>
     </div>
   </div>
+
+  <div id="auth-screen" class="auth-screen" hidden></div>
 
   <aside id="drawer" class="drawer" aria-hidden="true" aria-labelledby="drawer-title">
     <div class="drawer-head"><h2 id="drawer-title"></h2><button class="btn btn-ghost btn-icon" id="drawer-close" aria-label="Close" type="button">✕</button></div>
