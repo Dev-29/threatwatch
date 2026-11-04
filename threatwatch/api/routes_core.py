@@ -248,8 +248,7 @@ def settings_view(db: Session = Depends(get_db)):
         "version": __version__,
         "integrations": s.integration_status(),
         "auth_enabled": bool(s.api_key) or users > 0,
-        "auth": {"api_key": bool(s.api_key), "users": users, "session_idle_hours": s.session_idle_hours,
-                 "session_max_days": s.session_max_days},
+        "auth": {"api_key": bool(s.api_key), "users": users, "token_expiry_minutes": s.jwt_expiry_minutes},
         "database": s.database_url.split("://")[0],
         "scheduler": {"enabled": s.scheduler_enabled, "feeds_interval_minutes": s.feeds_interval_minutes,
                       "darkweb_interval_hours": s.darkweb_interval_hours,
@@ -259,6 +258,7 @@ def settings_view(db: Session = Depends(get_db)):
                    "phishing_max_permutations": s.phishing_max_permutations, "asm_max_hosts": s.asm_max_hosts},
         "onion_sources": len(s.onion_source_list),
         "asm_active_default": s.asm_active_default,
+        "pentest_enabled": s.pentest_enabled,
         "attack_catalog_size": len(attack.catalog()),
     }
 

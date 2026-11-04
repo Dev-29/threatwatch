@@ -14,9 +14,7 @@ from ..core import auth
 from ..db import get_db
 from ..models import User
 from .common import (
-    CSRF_HEADER,
     api_key_valid,
-    has_csrf_header,
     identify,
     require_admin,
     require_auth,
@@ -57,21 +55,18 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _require_csrf(request: Request) -> None:
-    if not has_csrf_header(request):
-        raise HTTPException(403, f"missing {CSRF_HEADER} header")
+def _token_response(db: Session, user: User) -> dict:
+    """Issue a fresh JWT and the standard token envelope, with the user record alongside for convenience."""
+    token, expires_in = auth.create_access_token(db, user)
+    return {"token": token, "token_type": "bearer", "expires_in": expires_in, "user": user_json(user)}
 
 
-def _set_cookie(request: Request, response: Response, token: str) -> None:
-    mode = get_settings().session_cookie_secure.strip().lower()
-    secure = request.url.scheme == "https" if mode == "auto" else mode in ("1", "true", "yes", "on")
-    response.set_cookie(auth.COOKIE_NAME, token, max_age=int(get_settings().session_max_days * 86400),
-                        httponly=True, secure=secure, samesite="strict", path="/")
-
-
-def _start_session(request: Request, response: Response, db: Session, user: User) -> None:
-    token = auth.create_session(db, user, _client_ip(request), request.headers.get("user-agent"))
-    _set_cookie(request, response, token)
+def _current_user(request: Request, db: Session) -> User | None:
+    """The signed-in user, loaded from the JWT's subject claim. None for API-key / open / anonymous callers."""
+    mode, claims = identify(request, db)
+    if mode != "jwt" or not claims:
+        return None
+    return db.get(User, int(claims["sub"]))
 
 
 def _bad_request(e: auth.AuthError):
@@ -82,15 +77,15 @@ def _bad_request(e: auth.AuthError):
 @router.get("/me")
 def me(request: Request, db: Session = Depends(get_db)):
     """Who is signed in, and whether the first admin account still needs to be created."""
-    mode, user = identify(request, db)
+    mode, _ = identify(request, db)
+    user = _current_user(request, db) if mode == "jwt" else None
     s = get_settings()
     return {"authenticated": mode is not None, "mode": mode, "user": user_json(user) if user else None,
             "setup_required": auth.user_count(db) == 0, "api_key_configured": bool(s.api_key)}
 
 
 @router.post("/login")
-def login(body: Credentials, request: Request, response: Response, db: Session = Depends(get_db)):
-    _require_csrf(request)
+def login(body: Credentials, request: Request, db: Session = Depends(get_db)):
     ip = _client_ip(request)
     wait = auth.throttle.retry_after(ip, body.username)
     if wait:
@@ -101,22 +96,18 @@ def login(body: Credentials, request: Request, response: Response, db: Session =
         auth.throttle.fail(ip, body.username)
         raise HTTPException(401, "invalid username or password")
     auth.throttle.reset(ip, body.username)
-    auth.revoke_session(db, request.cookies.get(auth.COOKIE_NAME))  # no session fixation
-    _start_session(request, response, db, user)
-    return {"user": user_json(user)}
+    return _token_response(db, user)
 
 
 @router.post("/logout", status_code=204)
-def logout(request: Request, response: Response, db: Session = Depends(get_db)):
-    _require_csrf(request)
-    auth.revoke_session(db, request.cookies.get(auth.COOKIE_NAME))
-    response.delete_cookie(auth.COOKIE_NAME, path="/")
+def logout():
+    """No-op for stateless tokens: the client simply discards its JWT. Provided for API symmetry."""
+    return Response(status_code=204)
 
 
 @router.post("/setup")
-def setup(body: Credentials, request: Request, response: Response, db: Session = Depends(get_db)):
+def setup(body: Credentials, request: Request, db: Session = Depends(get_db)):
     """Create the first admin account. Only possible while no users exist; needs the API key if one is set."""
-    _require_csrf(request)
     if auth.user_count(db) > 0:
         raise HTTPException(409, "setup already completed; sign in instead")
     if get_settings().api_key and not api_key_valid(request):
@@ -125,25 +116,27 @@ def setup(body: Credentials, request: Request, response: Response, db: Session =
         user = auth.create_user(db, body.username, body.password, role="admin")
     except auth.AuthError as e:
         raise _bad_request(e) from e
-    _start_session(request, response, db, user)
-    return {"user": user_json(user)}
+    return _token_response(db, user)
 
 
 @router.post("/password")
-def change_password(body: PasswordChange, request: Request, response: Response, db: Session = Depends(get_db)):
-    """Change your own password. Signs out every other session of this user."""
-    _require_csrf(request)
-    mode, user = identify(request, db)
-    if mode != "session":
+def change_password(body: PasswordChange, request: Request, db: Session = Depends(get_db)):
+    """Change your own password and get a fresh token.
+
+    Note: because tokens are stateless, JWTs issued earlier (including on other devices) stay valid until
+    they expire - a password change cannot forcibly sign them out. Keep TW_JWT_EXPIRY_MINUTES short if
+    that matters to you.
+    """
+    user = _current_user(request, db)
+    if user is None:
         raise HTTPException(401, "sign in to change your password")
     if not auth.verify_password(body.current_password, user.password_hash):
         raise HTTPException(403, "current password is incorrect")
     try:
-        auth.set_password(db, user, body.new_password)  # revokes all sessions, including this one
+        auth.set_password(db, user, body.new_password)
     except auth.AuthError as e:
         raise _bad_request(e) from e
-    _start_session(request, response, db, user)
-    return {"ok": True}
+    return {"ok": True, **_token_response(db, user)}
 
 
 # ---------------------------------------------------------------- user management (admin)
@@ -155,8 +148,8 @@ def _get_user(db: Session, user_id: int) -> User:
 
 
 def _is_self(request: Request, user: User) -> bool:
-    me_ = getattr(request.state, "user", None)
-    return me_ is not None and me_.id == user.id
+    uid = getattr(request.state, "user_id", None)
+    return uid is not None and uid == user.id
 
 
 @users.get("")
@@ -185,8 +178,8 @@ def update_user(user_id: int, body: UserPatch, request: Request, db: Session = D
         user.role = body.role
     if body.disabled is not None:
         user.disabled = body.disabled
-        if body.disabled:
-            auth.revoke_user_sessions(db, user.id)
+        # Disabling blocks new sign-ins, but any JWT already issued to this user keeps working until it
+        # expires - stateless tokens cannot be revoked server-side.
     if body.password:
         try:
             auth.set_password(db, user, body.password)

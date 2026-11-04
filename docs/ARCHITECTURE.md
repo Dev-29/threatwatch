@@ -42,7 +42,7 @@ flowchart LR
 | Layer | Responsibility | Key files |
 |---|---|---|
 | UI | Hash-routed SPA; escapes all dynamic content; no external assets | `web/js/app.js`, `web/js/views/*.js`, `web/js/ui.js`, `web/js/charts.js` |
-| API | Validation, auth (user sessions + `X-API-Key`), roles, pagination, export, TAXII 2.1 | `api/routes_*.py`, `api/common.py`, `core/auth.py` |
+| API | Validation, auth (JWT bearer tokens + `X-API-Key`), roles, pagination, export, TAXII 2.1 | `api/routes_*.py`, `api/common.py`, `core/auth.py` |
 | Jobs | Runs long tasks as asyncio tasks; records `job_runs`; one job per (kind, target); sends pending webhooks afterwards | `core/jobs.py` |
 | Scheduler | Every 60 s, submits jobs whose interval has elapsed (last run read from `job_runs`, so restarts don't double-run) | `scheduler.py` |
 | Modules | Domain logic per capability | `modules/*` |

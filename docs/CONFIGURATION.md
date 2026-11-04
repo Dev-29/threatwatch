@@ -10,9 +10,8 @@ All settings are environment variables prefixed with `TW_`. They can also be put
 | `TW_HOST` | `127.0.0.1` | Bind address for `threatwatch serve` |
 | `TW_PORT` | `8000` | Bind port |
 | `TW_API_KEY` | *(unset)* | Key for scripts and TAXII clients: `X-API-Key: <key>`, `Authorization: Bearer <key>` or `?api_key=<key>`. Full access. `/api/health` stays open. |
-| `TW_SESSION_IDLE_HOURS` | `12` | Browser sessions expire after this much inactivity |
-| `TW_SESSION_MAX_DAYS` | `7` | Absolute session lifetime, regardless of activity |
-| `TW_SESSION_COOKIE_SECURE` | `auto` | `Secure` flag on the session cookie. `auto` sets it for HTTPS requests, including `X-Forwarded-Proto: https` from a proxy on 127.0.0.1 (uvicorn's default trusted proxy). Set `true` when the proxy runs elsewhere, e.g. another container |
+| `TW_JWT_SECRET` | *(auto)* | HS256 signing key for session JWTs. If unset, a random key is generated once and stored at `<data_dir>/jwt_secret.key` so tokens survive restarts. Set this explicitly to share one key across multiple instances, or to rotate it (rotating invalidates all existing tokens) |
+| `TW_JWT_EXPIRY_MINUTES` | `720` | How long an issued token stays valid. Tokens are stateless and cannot be revoked early, so shorter values bound the damage of a leaked token (at the cost of re-signing in more often) |
 | `TW_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins per client IP and username within 15 minutes before sign-in is blocked |
 | `TW_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `TW_DATA_DIR` | `./data` | Runtime data (synced ATT&CK catalogue) |
@@ -76,3 +75,15 @@ All settings are environment variables prefixed with `TW_`. They can also be put
 | `TW_ASM_ACTIVE_DEFAULT` | `false` | Default mode for scheduled scans and API calls that omit `active` |
 | `TW_ASM_MAX_HOSTS` | `150` | Maximum hostnames analysed per scan (prioritises root, `www`, and names seen by more sources) |
 | `TW_ASM_CONCURRENCY` | `200` | Concurrent TCP connection attempts during port scans |
+
+### Autonomous pentest (OWASP Top 10)
+
+Active, intrusive testing driven by Claude Code. See [PENTEST.md](PENTEST.md). Only run against
+targets you own or are authorised to assess.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TW_PENTEST_ENABLED` | `false` | Enable the pentest API endpoint (`POST /api/v1/asm/pentests`) and the web-UI "New pentest" button (the CLI `pentest` command works regardless, and always requires `--i-am-authorized`) |
+| `TW_PENTEST_MODEL` | *(CLI default)* | Model id the agent runs as, e.g. `claude-opus-4-8` |
+| `TW_PENTEST_MAX_TURNS` | `120` | Maximum agent turns before a run stops |
+| `TW_PENTEST_ALLOWED_TOOLS` | *(module default)* | Override the agent's tool allowlist (JSON list) |

@@ -80,7 +80,7 @@ Reference numbers on a 2-vCPU VM:
 |---|---|
 | UI shows "Create the admin account" | No users exist yet. Create one there or with `threatwatch user add <name> --role admin`. |
 | Forgot the admin password / locked out | `threatwatch user passwd <name>` on the server (or `threatwatch user add <new> --role admin`). Sign-in lockouts clear after 15 minutes or on restart. |
-| Sign-in succeeds but the login screen comes straight back | The browser dropped the session cookie: it is marked `Secure` but the site is served over plain HTTP. Use HTTPS, or check `TW_SESSION_COOKIE_SECURE`. |
+| Sign-in succeeds but the login screen comes straight back | The browser isn't holding the token. Check that `localStorage` isn't blocked (private-window / strict privacy settings) and that `POST /api/v1/auth/login` returned a `token`. If tokens stop working after a restart, the auto-generated `<data_dir>/jwt_secret.key` isn't persisted — set `TW_JWT_SECRET` explicitly. |
 | Feed shows `error` | Check the message in **Threat Intel → Feeds** (hover). HTTP 401/403 means a key is wrong or missing; 410 means the provider retired the endpoint; timeouts usually mean egress filtering or a proxy (`TW_HTTP_PROXY`). |
 | `needs key` on a trial feed | Set the variable listed in the Feeds tab and restart |
 | Dark-web scan finds nothing | Check **Dark Web → Sources**. Executive assets need email addresses in their profile. HackerTarget and LeakCheck have daily quotas. |

@@ -7,7 +7,7 @@
 | **Dark Web Monitoring** | Finds leaked credentials, infostealer infections, ransomware leak-site listings, pastes, code leaks and dark-web mentions of your **domains, employees, executives and brand**. Every exposure gets an explainable 0-100 risk score, and alerts fire above a threshold. |
 | **Threat Intelligence Feed** | Collects IOCs from 10 free and 5 trial feeds, then **normalises, de-duplicates, scores and maps them to MITRE ATT&CK**. You can export them as **STIX 2.1**, JSON, CSV or a plain-text blocklist, or pull them from the REST API and a built-in **TAXII 2.1** server. |
 | **Anti-Phishing** | Generates thousands of look-alike domains (typos, homoglyphs, IDN homographs, combosquats, TLD swaps), checks which are registered, and inspects their DNS, MX, website, content similarity, login forms and registration age. Also watches Certificate Transparency logs and analyses any URL on demand. |
-| **Attack Surface Management** | Discovers sub-domains from CT logs, passive DNS, web archives and brute force. Fingerprints web services, analyses TLS certificates, optionally port-scans, and checks email/DNS hygiene and sub-domain takeover. Produces a graded **risk report** in HTML, Markdown or JSON. |
+| **Attack Surface Management** | Discovers sub-domains from CT logs, passive DNS, web archives and brute force. Fingerprints web services, analyses TLS certificates, optionally port-scans, and checks email/DNS hygiene and sub-domain takeover. Produces a graded **risk report** in HTML, Markdown or JSON. Can also run an **autonomous OWASP Top 10 pentest** of an authorised target, driven by Claude Code — see [docs/PENTEST.md](docs/PENTEST.md). |
 
 All four share one watchlist, one alerting pipeline and one web UI. The modules also feed each other:
 
@@ -73,6 +73,7 @@ threatwatch phishing --domain example.com               # look-alike scan
 threatwatch analyze-url "https://suspicious.example/login"
 threatwatch asm example.com --report report.html        # passive ASM + report
 threatwatch asm example.com --active --i-am-authorized  # + port scan, sensitive paths, AXFR
+threatwatch pentest https://example.com --i-am-authorized  # autonomous OWASP Top 10 pentest (Claude Code)
 threatwatch export --format stix --min-score 65 -o iocs.stix.json
 threatwatch add-asset executive "Jane Doe" --email jane@example.com --criticality critical
 threatwatch attack-sync                                 # full MITRE ATT&CK catalogue
@@ -90,6 +91,7 @@ threatwatch user add alice --role admin                 # also: list, passwd, ro
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Using each module day to day; triage workflows |
 | [docs/SCORING.md](docs/SCORING.md) | All risk models and the ATT&CK mapping rules, with formulas |
 | [docs/DATA_FORMAT.md](docs/DATA_FORMAT.md) | STIX 2.1 mapping, `threatwatch.ioc.v1` JSON schema, CSV, ASM report format |
+| [docs/PENTEST.md](docs/PENTEST.md) | Autonomous OWASP Top 10 pentest: setup, authorisation/scope model, how it works |
 | [docs/API.md](docs/API.md) | REST API and TAXII 2.1 reference with examples (OpenAPI is served at `/api/docs`) |
 | [docs/SOURCES.md](docs/SOURCES.md) | Every feed and connector, how to get keys, how to add your own |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Scheduling, backups, retention, performance tuning, troubleshooting |
@@ -108,7 +110,8 @@ threatwatch/
     darkweb/       leak-source connectors, exposure scoring, leak-file importer
     intel/         feed definitions, ingestion pipeline, scoring, ATT&CK mapping, STIX/TAXII export
     phishing/      permutation engine, page analysis, RDAP, URL analyser
-    asm/           discovery, probes (ports/TLS/HTTP), finding rules, report renderer
+    asm/           discovery, probes (ports/TLS/HTTP), finding rules, report renderer,
+                   owasp.py + pentest.py (autonomous OWASP Top 10 pentest via Claude Code)
   api/             FastAPI routers
   web/             single-page UI (HTML/CSS/JS)
   data/            embedded ATT&CK subset, sub-domain wordlist

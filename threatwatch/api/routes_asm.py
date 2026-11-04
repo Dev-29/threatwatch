@@ -14,7 +14,7 @@ from ..config import get_settings
 from ..core import jobs
 from ..db import get_db
 from ..models import AsmAsset, AsmFinding, AsmScan
-from ..modules.asm import report, service
+from ..modules.asm import pentest, report, service
 from .common import iso
 from .routes_core import registrable_or_400
 
@@ -22,10 +22,11 @@ router = APIRouter(prefix="/asm", tags=["attack surface"])
 
 
 def scan_json(s: AsmScan) -> dict:
-    return {"id": s.id, "root_domain": s.root_domain, "active": s.active, "status": s.status,
+    mode = "pentest" if (s.summary or {}).get("mode") == "pentest" else "scan"
+    return {"id": s.id, "root_domain": s.root_domain, "active": s.active, "status": s.status, "mode": mode,
             "started_at": iso(s.started_at), "finished_at": iso(s.finished_at), "risk_score": s.risk_score,
             "grade": s.grade, "summary": s.summary, "message": s.message,
-            "running": jobs.is_running("asm_scan", str(s.id))}
+            "running": jobs.is_running("asm_scan", str(s.id)) or jobs.is_running("asm_pentest", str(s.id))}
 
 
 @router.get("/scans")
@@ -58,6 +59,34 @@ async def start_scan(body: ScanIn):
     return {"status": "started", "scan_id": scan_id, "root_domain": root, "active": active}
 
 
+class PentestIn(BaseModel):
+    target: str
+    authorized: bool = False
+    by: str | None = None
+
+
+@router.post("/pentests", status_code=202)
+async def start_pentest(body: PentestIn):
+    """Launch an autonomous OWASP Top 10 pentest of a single authorised target (Claude Code)."""
+    if not get_settings().pentest_enabled:
+        raise HTTPException(403, "autonomous pentest is disabled; set TW_PENTEST_ENABLED=true to enable it")
+    if not body.authorized:
+        raise HTTPException(400, "an autonomous pentest performs active, intrusive testing - set 'authorized': "
+                                 "true to confirm you own or are permitted to test this exact target")
+    try:
+        target = pentest.parse_target(body.target)
+        scan_id = pentest.create_pentest(body.target, authorized_by=f"api:{body.by}" if body.by else "api",
+                                         scope_ack=body.authorized)
+    except pentest.ScopeError as e:
+        raise HTTPException(400, str(e))
+
+    async def job(job_id):
+        return await pentest.run_pentest(scan_id, job_id)
+
+    jobs.submit("asm_pentest", job, target=str(scan_id))
+    return {"status": "started", "scan_id": scan_id, "target": target.host, "scope_hosts": target.scope_hosts}
+
+
 @router.get("/scans/{scan_id}")
 def get_scan(scan_id: int, db: Session = Depends(get_db)):
     s = db.get(AsmScan, scan_id)
@@ -71,7 +100,7 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
     s = db.get(AsmScan, scan_id)
     if not s:
         raise HTTPException(404, "scan not found")
-    if jobs.is_running("asm_scan", str(scan_id)):
+    if jobs.is_running("asm_scan", str(scan_id)) or jobs.is_running("asm_pentest", str(scan_id)):
         raise HTTPException(409, "scan is running")
     db.delete(s)
 

@@ -95,6 +95,42 @@ def cmd_asm(a):
         print("report written to", a.report)
 
 
+def cmd_pentest(a):
+    """Autonomous OWASP Top 10 pentest of a single authorised target, driven by Claude Code."""
+    from .modules.asm import pentest, report
+    from .models import AsmScan
+
+    create_all()
+    if not a.i_am_authorized:
+        sys.exit("refusing pentest: pass --i-am-authorized to confirm you own / are authorised to "
+                 "test this exact target. This runs active, intrusive security tests.")
+    try:
+        target = pentest.parse_target(a.target)
+    except pentest.ScopeError as e:
+        sys.exit(f"bad target: {e}")
+    print(f"authorised pentest scope: {', '.join(target.scope_hosts)} (nothing else will be touched)")
+    try:
+        sid = pentest.create_pentest(a.target, authorized_by=f"cli:{a.by or ''}".rstrip(":"),
+                                     scope_ack=a.i_am_authorized)
+    except pentest.ScopeError as e:
+        sys.exit(str(e))
+    try:
+        res = asyncio.run(run_job("asm_pentest", lambda j: pentest.run_pentest(sid, j),
+                                  target=str(sid), trigger="cli"))
+    except pentest.PentestUnavailable as e:
+        sys.exit(str(e))
+    _print(res)
+    if a.report:
+        with session_scope() as db:
+            scan = db.get(AsmScan, sid)
+            content = report.render_markdown(scan) if a.report.endswith(".md") else (
+                json.dumps(report.scan_to_dict(scan), indent=2) if a.report.endswith(".json")
+                else report.render_html(scan))
+        with open(a.report, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        print("report written to", a.report)
+
+
 def cmd_export(a):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
@@ -187,7 +223,7 @@ def cmd_user(a):
                 sys.exit(f"no such user: {a.username}")
             if a.action == "passwd":
                 auth.set_password(db, user, _read_password(a, "New password"))
-                print(f"password changed for '{user.username}'; their sessions were signed out")
+                print(f"password changed for '{user.username}'")
             elif a.action in ("disable", "enable", "delete", "role"):
                 last_admin = user.role == "admin" and not user.disabled and auth.active_admin_count(db) <= 1
                 if last_admin and (a.action in ("disable", "delete") or (a.action == "role" and a.role != "admin")):
@@ -200,8 +236,6 @@ def cmd_user(a):
                     user.role = a.role
                 else:
                     user.disabled = a.action == "disable"
-                    if user.disabled:
-                        auth.revoke_user_sessions(db, user.id)
                 print(f"{a.action}: '{user.username}' done")
     except auth.AuthError as e:
         sys.exit(str(e))
@@ -243,6 +277,14 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--i-am-authorized", action="store_true", help="confirm authorisation for active scanning")
     s.add_argument("--report", help="write report to file (.html, .md or .json)")
     s.set_defaults(fn=cmd_asm)
+
+    s = sub.add_parser("pentest", help="autonomous OWASP Top 10 pentest of a URL/asset (Claude Code)")
+    s.add_argument("target", help="target URL or hostname you own / are authorised to test")
+    s.add_argument("--i-am-authorized", action="store_true",
+                   help="required: confirm authorisation for active, intrusive testing of this target")
+    s.add_argument("--by", help="who authorised / is running this engagement (recorded for audit)")
+    s.add_argument("--report", help="write report to file (.html, .md or .json)")
+    s.set_defaults(fn=cmd_pentest)
 
     s = sub.add_parser("export", help="export indicators")
     s.add_argument("--format", choices=["stix", "json", "csv", "txt"], default="stix")

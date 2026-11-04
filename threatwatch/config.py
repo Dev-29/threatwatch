@@ -17,13 +17,12 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     api_key: str | None = None
-    # Browser sessions (user accounts). Sessions expire after this much inactivity.
-    session_idle_hours: float = 12.0
-    # Absolute session lifetime regardless of activity.
-    session_max_days: float = 7.0
-    # Secure flag on the session cookie: "auto" sets it when the request arrived over HTTPS (uvicorn honours
-    # X-Forwarded-Proto from 127.0.0.1 by default), or force "true"/"false".
-    session_cookie_secure: str = "auto"
+    # JWT bearer-token authentication (stateless). Clients sign in and receive a signed JWT, then send it as
+    # ``Authorization: Bearer <token>`` on every request. Tokens are self-contained and verified by signature
+    # and expiry alone - there is no server-side session store, so they cannot be revoked before they expire.
+    jwt_secret: str | None = None  # HS256 signing key; auto-generated under data_dir/jwt_secret.key if unset
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_minutes: int = 720  # how long an issued token stays valid (default 12h)
     # Failed logins allowed per (client IP, username) within 15 minutes before login is blocked.
     login_max_failures: int = 5
     log_level: str = "INFO"
@@ -67,6 +66,13 @@ class Settings(BaseSettings):
     asm_active_default: bool = False
     asm_max_hosts: int = 150
     asm_concurrency: int = 200
+
+    # Autonomous pentest (OWASP Top 10) - drives Claude Code via the Claude Agent SDK.
+    # Active, intrusive testing: only ever run against targets you own or are authorised to assess.
+    pentest_enabled: bool = False
+    pentest_model: str | None = None  # e.g. claude-opus-4-8; None uses the CLI default
+    pentest_max_turns: int = 120
+    pentest_allowed_tools: list[str] = []  # empty -> module default allowlist
 
     @property
     def onion_source_list(self) -> list[str]:

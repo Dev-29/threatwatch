@@ -1,4 +1,4 @@
-import { api, getKey, setKey } from "../api.js";
+import { api, getKey, setKey, setToken } from "../api.js";
 import { refreshMe } from "../auth.js";
 import { $, $$, ago, chip, closeModal, html, kv, mount, openModal, sectionHead, table, toast } from "../ui.js";
 
@@ -21,7 +21,7 @@ const INTEGRATIONS = {
 
 export async function render(main) {
   const [s, jobs, me] = await Promise.all([api("/settings"), api("/jobs", { params: { limit: 25 } }), refreshMe()]);
-  const canAdmin = me.mode === "api_key" || (me.mode === "session" && me.user.role === "admin");
+  const canAdmin = me.mode === "api_key" || (me.mode === "jwt" && me.user.role === "admin");
   const users = canAdmin ? (await api("/users")).items : [];
   mount(main, html`
     ${sectionHead("Settings", `ThreatWatch v${s.version} · configuration is read from environment variables / .env (see .env.example)`)}
@@ -44,7 +44,7 @@ export async function render(main) {
           ["Max permutations", s.limits.phishing_max_permutations.toLocaleString()], ["ASM max hosts", s.limits.asm_max_hosts],
           ["ATT&CK catalogue", `${s.attack_catalog_size} techniques`], ["Database", s.database],
         ])}</div>
-        ${me.mode === "session" ? html`<div class="card"><div class="card-head"><h2>Your account</h2></div>
+        ${me.mode === "jwt" ? html`<div class="card"><div class="card-head"><h2>Your account</h2></div>
           ${kv([["Username", me.user.username], ["Role", html`${me.user.role} <span class="muted small">· ${ROLE_HELP[me.user.role]}</span>`],
                 ["Password changed", ago(me.user.password_changed_at)]])}
           <form id="pw-form" style="margin-top:12px">
@@ -52,10 +52,10 @@ export async function render(main) {
             <label class="field"><span>New password</span><input name="new_password" type="password" required minlength="10" autocomplete="new-password"></label>
             <label class="field"><span>Confirm new password</span><input name="confirm" type="password" required autocomplete="new-password"></label>
             <button class="btn">Change password</button>
-            <p class="small muted">Changing your password signs out your other sessions.</p>
+            <p class="small muted">You'll get a new token. Tokens already issued stay valid until they expire.</p>
           </form></div>` : ""}
         <div class="card"><div class="card-head"><h2>API access</h2></div>
-          <p class="small">${s.auth.users ? html`Browser sign-in is <b>ON</b> (${s.auth.users} user${s.auth.users === 1 ? "" : "s"}; sessions expire after ${s.auth.session_idle_hours} h idle, ${s.auth.session_max_days} days max).`
+          <p class="small">${s.auth.users ? html`Browser sign-in is <b>ON</b> (${s.auth.users} user${s.auth.users === 1 ? "" : "s"}; JWT tokens expire ${s.auth.token_expiry_minutes} min after issue).`
             : html`No user accounts exist yet.`}
           ${s.auth.api_key ? " The API key for scripts and TAXII clients is ON." : html` API key is <b>off</b>: set <code>TW_API_KEY</code> to let scripts and TAXII clients authenticate.`}</p>
           ${s.auth.api_key ? html`<form id="key" style="display:flex;gap:8px"><input type="password" name="key" placeholder="Use the API key in this browser instead of signing in" value="${getKey()}" style="flex:1">
@@ -96,7 +96,8 @@ export async function render(main) {
     const fd = new FormData(e.target);
     if (fd.get("new_password") !== fd.get("confirm")) return toast("The new passwords do not match", "error");
     try {
-      await api("/auth/password", { method: "POST", body: { current_password: fd.get("current_password"), new_password: fd.get("new_password") } });
+      const res = await api("/auth/password", { method: "POST", body: { current_password: fd.get("current_password"), new_password: fd.get("new_password") } });
+      if (res.token) setToken(res.token);  // adopt the freshly issued token
       toast("Password changed", "ok");
       rerender();
     } catch (err) { toast(err.message, "error"); }

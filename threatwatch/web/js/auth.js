@@ -1,5 +1,5 @@
 // Sign-in and first-run setup screens, plus the signed-in user box in the sidebar.
-import { api } from "./api.js";
+import { api, setToken } from "./api.js";
 import { $, html, mount } from "./ui.js";
 
 /** Last /auth/me response: { authenticated, mode, user, setup_required, api_key_configured }. */
@@ -63,7 +63,8 @@ export function showAuthScreen({ setup = false, apiKeyConfigured = false, messag
       btn.disabled = true;
       try {
         const headers = setup && apiKeyConfigured ? { "X-API-Key": String(fd.get("apikey") || "") } : {};
-        await api(setup ? "/auth/setup" : "/auth/login", { method: "POST", body: { username, password }, headers });
+        const res = await api(setup ? "/auth/setup" : "/auth/login", { method: "POST", body: { username, password }, headers });
+        setToken(res.token);  // store the JWT; all later requests send it as a Bearer token
         await refreshMe();
         hideAuthScreen();
         resolve(me);
@@ -86,7 +87,7 @@ export function hideAuthScreen() {
 
 export function renderUserBox() {
   const box = $("#user-box");
-  if (me?.mode === "session" && me.user) {
+  if (me?.mode === "jwt" && me.user) {
     box.hidden = false;
     mount($("#user-name"), html`<b>${me.user.username}</b> <span class="muted">· ${me.user.role}</span>`);
   } else {
@@ -95,14 +96,15 @@ export function renderUserBox() {
 }
 
 export async function signOut() {
-  try { await api("/auth/logout", { method: "POST" }); } catch { /* already signed out */ }
+  try { await api("/auth/logout", { method: "POST" }); } catch { /* best-effort */ }
+  setToken(null);  // discarding the token is what actually signs out with stateless JWTs
   location.reload();
 }
 
 /** Make sure someone is signed in; shows the right screen if not. Resolves when the app may load. */
 export async function ensureSignedIn(message = "") {
   await refreshMe();
-  if (me.mode === "session" || me.mode === "api_key") { renderUserBox(); return me; }
+  if (me.mode === "jwt" || me.mode === "api_key") { renderUserBox(); return me; }
   // "open" = no users and no API key yet; null = credentials needed
   if (me.setup_required) return showAuthScreen({ setup: true, apiKeyConfigured: me.api_key_configured, message });
   return showAuthScreen({ message });

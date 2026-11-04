@@ -1,4 +1,4 @@
-"""Shared API plumbing: authentication (API key + browser sessions), pagination and ORM -> JSON serialisers."""
+"""Shared API plumbing: authentication (JWT bearer tokens + API key), pagination and ORM -> JSON serialisers."""
 
 from __future__ import annotations
 
@@ -16,37 +16,34 @@ from ..models import Alert, Asset, Exposure, JobRun, LookalikeDomain, User
 
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-CSRF_HEADER = "x-requested-with"
-CSRF_VALUE = "ThreatWatch"
 
 
-def _supplied_api_key(request: Request) -> str:
-    supplied = request.headers.get("x-api-key") or request.query_params.get("api_key") or ""
-    auth = request.headers.get("authorization", "")
-    if not supplied and auth.lower().startswith("bearer "):
-        supplied = auth[7:]
-    return supplied
+def bearer_token(request: Request) -> str | None:
+    """The token from ``Authorization: Bearer <token>``, or the ``access_token`` query parameter (used by
+    plain-link downloads, which cannot set an Authorization header). None if neither is present."""
+    header = request.headers.get("authorization", "")
+    if header[:7].lower() == "bearer ":
+        return header[7:].strip() or None
+    return request.query_params.get("access_token") or None
 
 
 def api_key_valid(request: Request) -> bool:
+    """True if the configured TW_API_KEY was supplied via X-API-Key, ?api_key= or a Bearer header."""
     expected = get_settings().api_key
-    supplied = _supplied_api_key(request)
+    supplied = request.headers.get("x-api-key") or request.query_params.get("api_key") or bearer_token(request) or ""
     return bool(expected and supplied) and hmac.compare_digest(supplied.encode(), expected.encode())
 
 
-def has_csrf_header(request: Request) -> bool:
-    """Cookie-authenticated writes must carry a custom header. Browsers refuse to add custom headers to
-    cross-site requests without a CORS preflight (which this app never grants), so this blocks CSRF."""
-    return request.headers.get(CSRF_HEADER) == CSRF_VALUE
+def identify(request: Request, db: Session) -> tuple[str | None, dict | None]:
+    """Who is calling: ("jwt", claims) | ("api_key", None) | ("open", None) | (None, None).
 
-
-def identify(request: Request, db: Session) -> tuple[str | None, User | None]:
-    """Who is calling: ("api_key", None) | ("session", user) | ("open", None) | (None, None)."""
+    A bearer token is tried as a JWT first; if it is instead the instance API key it matches here.
+    """
+    claims = auth.decode_access_token(bearer_token(request))
+    if claims is not None:
+        return "jwt", claims
     if api_key_valid(request):
         return "api_key", None
-    user = auth.resolve_session(db, request.cookies.get(auth.COOKIE_NAME))
-    if user is not None:
-        return "session", user
     if not get_settings().api_key and auth.user_count(db) == 0:
         return "open", None  # nothing configured yet: behave like before accounts existed
     return None, None
@@ -55,24 +52,28 @@ def identify(request: Request, db: Session) -> tuple[str | None, User | None]:
 def require_auth(request: Request, db: Session = Depends(get_db)) -> None:
     """Gate for /api/v1 and /taxii2.
 
-    Accepts the TW_API_KEY (X-API-Key, Bearer or ?api_key=) or a browser session cookie. Viewers are
-    read-only. With no users and no API key configured the instance is open, as in earlier versions.
+    Accepts a JWT (``Authorization: Bearer <token>``) or the TW_API_KEY (X-API-Key, Bearer or ?api_key=).
+    Viewers are read-only. With no users and no API key configured the instance is open, as in earlier
+    versions. No CSRF defence is needed: the Authorization header is never attached automatically by the
+    browser the way a cookie is, so cross-site requests cannot authenticate.
     """
-    mode, user = identify(request, db)
+    mode, claims = identify(request, db)
     if mode is None:
         raise HTTPException(status_code=401, detail="authentication required")
-    request.state.auth_mode, request.state.user = mode, user
-    if mode == "session" and request.method not in SAFE_METHODS:
-        if not has_csrf_header(request):
-            raise HTTPException(status_code=403, detail=f"missing {CSRF_HEADER} header")
-        if user.role == "viewer":
-            raise HTTPException(status_code=403, detail="viewer accounts are read-only")
+    request.state.auth_mode = mode
+    request.state.claims = claims
+    request.state.user_id = int(claims["sub"]) if claims else None
+    request.state.role = claims["role"] if claims else ("admin" if mode == "api_key" else None)
+    request.state.username = claims.get("username") if claims else None
+    if mode == "jwt" and request.method not in SAFE_METHODS and request.state.role == "viewer":
+        raise HTTPException(status_code=403, detail="viewer accounts are read-only")
 
 
 def require_admin(request: Request) -> None:
     """Use after require_auth. The API key counts as admin (it is the instance's root secret)."""
-    mode, user = getattr(request.state, "auth_mode", None), getattr(request.state, "user", None)
-    if mode == "api_key" or (mode == "session" and user.role == "admin"):
+    mode = getattr(request.state, "auth_mode", None)
+    role = getattr(request.state, "role", None)
+    if mode == "api_key" or role == "admin":
         return
     raise HTTPException(status_code=403, detail="admin role required")
 

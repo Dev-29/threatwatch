@@ -1,10 +1,14 @@
-"""User accounts: password hashing, browser sessions and login throttling.
+"""User accounts: password hashing, stateless JWT access tokens and login throttling.
 
 * Passwords are hashed with scrypt (stdlib, memory-hard) and a per-user random salt.
-* Session tokens are 256-bit random values. The browser holds the token in an HttpOnly cookie;
-  the database only stores its SHA-256, so a copy of the database cannot be replayed as a login.
-* Sessions slide forward on use (``TW_SESSION_IDLE_HOURS``) up to an absolute cap
-  (``TW_SESSION_MAX_DAYS``), and are revoked on logout, password change, role change or disable.
+* Authentication is a stateless JSON Web Token (HS256). On sign-in the client receives a signed JWT
+  carrying its user id, username and role, and sends it as ``Authorization: Bearer <token>`` thereafter.
+  The token is verified by signature and expiry alone - there is no server-side session store.
+
+  Trade-off of statelessness: a token is valid until its ``exp`` no matter what happens server-side.
+  Logout is therefore client-side (the client discards the token), and a password change, role change
+  or account-disable does *not* invalidate tokens already issued - they keep working until they expire
+  (``TW_JWT_EXPIRY_MINUTES``). Keep the expiry short if that matters for your threat model.
 """
 
 from __future__ import annotations
@@ -16,19 +20,22 @@ import re
 import secrets
 import threading
 import time
-from datetime import timedelta
+from pathlib import Path
 
-from sqlalchemy import delete, func, select
+import jwt  # PyJWT
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import User, UserSession, utcnow
+from ..models import User, utcnow
 
 ROLES = ("admin", "analyst", "viewer")
 ROLE_RANK = {"viewer": 0, "analyst": 1, "admin": 2}
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._@-]{1,63}$")
 MIN_PASSWORD_LEN = 10
-COOKIE_NAME = "tw_session"
+_JWT_LEEWAY = 10  # seconds of clock-skew tolerance on exp/iat
+_MAX_TOKEN_LEN = 4096
 
 # scrypt cost: N=2^15, r=8, p=1 -> ~32 MiB and ~50-100 ms per hash.
 _N, _R, _P, _DKLEN = 2**15, 8, 1, 32
@@ -106,7 +113,8 @@ def set_password(db: Session, user: User, password: str) -> None:
     check_password_policy(password, user.username)
     user.password_hash = hash_password(password)
     user.password_changed_at = utcnow()
-    revoke_user_sessions(db, user.id)
+    # Stateless tokens cannot be revoked, so JWTs issued before this change stay valid until they expire.
+    # The caller should hand the user a fresh token; older ones age out on their own.
 
 
 def authenticate(db: Session, username: str, password: str) -> User | None:
@@ -122,50 +130,52 @@ def authenticate(db: Session, username: str, password: str) -> User | None:
     return user if verify_password(password, user.password_hash) else None
 
 
-# ---------------------------------------------------------------- sessions
-def _token_hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
-def create_session(db: Session, user: User, ip: str | None = None, user_agent: str | None = None) -> str:
+# ---------------------------------------------------------------- JWT access tokens
+def _signing_secret() -> str:
+    """HS256 signing key. Uses ``TW_JWT_SECRET`` if set, otherwise a persistent random key stored under
+    the data directory so tokens survive restarts without requiring any configuration."""
     s = get_settings()
-    now = utcnow()
-    db.execute(delete(UserSession).where(UserSession.expires_at < now))  # opportunistic cleanup
-    token = secrets.token_urlsafe(32)
-    db.add(UserSession(token_hash=_token_hash(token), user_id=user.id, created_at=now, last_seen_at=now,
-                       expires_at=now + timedelta(hours=s.session_idle_hours),
-                       ip=(ip or "")[:64] or None, user_agent=(user_agent or "")[:255] or None))
-    user.last_login_at = now
+    if s.jwt_secret:
+        return s.jwt_secret
+    path = Path(s.data_dir) / "jwt_secret.key"
+    try:
+        secret = path.read_text().strip()
+        if secret:
+            return secret
+    except OSError:
+        pass
+    secret = secrets.token_urlsafe(48)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(secret)
+        path.chmod(0o600)
+    except OSError:
+        pass  # read-only data dir: fall back to an in-process key (tokens won't survive a restart)
+    return secret
+
+
+def create_access_token(db: Session, user: User) -> tuple[str, int]:
+    """Mint a signed JWT for ``user`` and record the login time. Returns ``(token, expires_in_seconds)``."""
+    s = get_settings()
+    expires_in = max(60, s.jwt_expiry_minutes * 60)
+    now = int(time.time())
+    payload = {"sub": str(user.id), "username": user.username, "role": user.role,
+               "iat": now, "nbf": now, "exp": now + expires_in}
+    token = jwt.encode(payload, _signing_secret(), algorithm=s.jwt_algorithm)
+    user.last_login_at = utcnow()
     db.flush()
-    return token
+    return token, expires_in
 
 
-def resolve_session(db: Session, token: str | None) -> User | None:
-    """Return the signed-in user for a cookie token, sliding the expiry forward. None if invalid/expired."""
-    if not token or len(token) > 128:
+def decode_access_token(token: str | None) -> dict | None:
+    """Verify a bearer token's signature and expiry. Returns its claims, or None if invalid/expired."""
+    if not token or len(token) > _MAX_TOKEN_LEN:
         return None
-    sess = db.scalar(select(UserSession).where(UserSession.token_hash == _token_hash(token)))
-    if sess is None:
+    try:
+        return jwt.decode(token, _signing_secret(), algorithms=[get_settings().jwt_algorithm],
+                          leeway=_JWT_LEEWAY, options={"require": ["exp", "sub"]})
+    except jwt.PyJWTError:
         return None
-    s = get_settings()
-    now = utcnow()
-    hard_limit = sess.created_at + timedelta(days=s.session_max_days)
-    if sess.expires_at <= now or hard_limit <= now or sess.user.disabled:
-        db.delete(sess)
-        return None
-    if (now - sess.last_seen_at).total_seconds() > 60:  # avoid a write on every request
-        sess.last_seen_at = now
-        sess.expires_at = min(now + timedelta(hours=s.session_idle_hours), hard_limit)
-    return sess.user
-
-
-def revoke_session(db: Session, token: str | None) -> None:
-    if token:
-        db.execute(delete(UserSession).where(UserSession.token_hash == _token_hash(token)))
-
-
-def revoke_user_sessions(db: Session, user_id: int) -> None:
-    db.execute(delete(UserSession).where(UserSession.user_id == user_id))
 
 
 # ---------------------------------------------------------------- login throttling

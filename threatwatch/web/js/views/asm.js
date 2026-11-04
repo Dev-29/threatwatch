@@ -10,14 +10,15 @@ export async function render(main, { args, signal }) {
 }
 
 async function renderList(main, signal) {
+  const settings = await api("/settings").catch(() => ({}));
   mount(main, html`${sectionHead("Attack Surface Management", "Discover sub-domains, exposed services and certificates; produce a risk report",
-    html`<button class="btn btn-primary" id="new">New scan</button>`)}<div id="list"></div>`);
+    html`${settings.pentest_enabled ? html`<button class="btn" id="new-pentest">New pentest</button>` : ""}<button class="btn btn-primary" id="new">New scan</button>`)}<div id="list"></div>`);
   async function load() {
     const scans = await api("/asm/scans");
     mount($("#list", main), table([
       { label: "Grade", render: (s) => s.grade ? html`<span class="grade grade-${s.grade}">${s.grade}</span>` : html`<span class="spin"></span>` },
       { label: "Root domain", render: (s) => html`<div class="cell-title"><a href="#/asm/${s.id}">${s.root_domain}</a></div><div class="cell-sub">${s.message || ""}</div>` },
-      { label: "Mode", render: (s) => chip(s.active ? "active" : "passive") },
+      { label: "Mode", render: (s) => s.mode === "pentest" ? chip("pentest", "chip-bad") : chip(s.active ? "active" : "passive") },
       { label: "Status", render: (s) => html`<span class="status-dot ${s.status === "done" ? "ok" : s.status === "failed" ? "error" : "running"}"></span>${s.status}` },
       { label: "Findings", render: (s) => s.summary?.by_severity ? html`<div style="min-width:160px">${sevStrip(s.summary.by_severity)}</div>` : "-" },
       { label: "Hosts", render: (s) => s.summary?.hosts_resolved ?? "-", cls: "num" },
@@ -26,6 +27,7 @@ async function renderList(main, signal) {
     if (scans.some((s) => s.status === "running" || s.status === "queued")) setTimeout(() => { if (main.isConnected) load(); }, 5000);
   }
   $("#new", main).addEventListener("click", () => newScanModal());
+  $("#new-pentest", main)?.addEventListener("click", () => newPentestModal());
   window.addEventListener("tw:job-done", load, { signal });
   await load();
 }
@@ -58,6 +60,30 @@ async function newScanModal() {
   });
 }
 
+async function newPentestModal() {
+  const body = openModal("New autonomous pentest", html`<form id="pt-form">
+    <label class="field"><span>Target URL or host</span><input name="target" required placeholder="https://app.example.com"></label>
+    <label class="field"><span>Authorised by <span class="muted small">(optional, recorded for audit)</span></span><input name="by" placeholder="name / ticket"></label>
+    <p class="small"><b>Active, intrusive testing.</b> A Claude Code agent works the OWASP Top 10 against <b>only</b> the target
+      host (and its www/apex variant). It is scope-bounded and non-destructive - no DoS, no data destruction, no off-scope hosts.</p>
+    <label class="checkline"><input type="checkbox" name="authorized"> <span>I confirm I own this target or have written authorisation
+      to run an active penetration test against it.</span></label>
+    <div class="modal-foot"><button type="button" class="btn" id="cancel">Cancel</button><button class="btn btn-primary">Start pentest</button></div></form>`);
+  const f = $("#pt-form", body);
+  $("#cancel").addEventListener("click", closeModal);
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!f.authorized.checked) { toast("Confirm authorisation to run a pentest", "error"); return; }
+    try {
+      const r = await api("/asm/pentests", { method: "POST", body: { target: f.target.value, by: f.by.value, authorized: true } });
+      closeModal();
+      jobStarted("asm_pentest", String(r.scan_id));
+      toast(`Pentest of ${r.target} started`, "ok");
+      location.hash = `#/asm/${r.scan_id}`;
+    } catch (err) { toast(err.message, "error"); }
+  });
+}
+
 async function renderScan(main, id, signal) {
   const s = await api(`/asm/scans/${id}`);
   if (s.status !== "done") {
@@ -74,6 +100,7 @@ async function renderScan(main, id, signal) {
     }
     return;
   }
+  if (s.mode === "pentest") return renderPentestResult(main, id, s);
   const [findings, assets] = await Promise.all([api(`/asm/scans/${id}/findings`), api(`/asm/scans/${id}/assets`)]);
   const sum = s.summary || {};
   const certs = assets.filter((a) => a.tls && a.tls.not_after);
@@ -163,6 +190,47 @@ async function renderScan(main, id, signal) {
     location.hash = `#/asm/${r.scan_id}`;
   });
   draw();
+}
+
+async function renderPentestResult(main, id, s) {
+  const findings = await api(`/asm/scans/${id}/findings`);
+  const sum = s.summary || {};
+  const coverage = sum.owasp_coverage || {};
+  const covChip = { finding: "chip-bad", tested: "chip-ok", error: "chip-bad", "not-applicable": "chip", "not-tested": "chip" };
+  const crit = (sum.by_severity?.critical || 0) + (sum.by_severity?.high || 0);
+  mount(main, html`
+    <div class="page-head"><div style="display:flex;gap:16px;align-items:center">
+      <span class="grade big grade-${s.grade}">${s.grade}</span>
+      <div><div class="muted small"><a href="#/asm">Attack surface</a> / pentest #${s.id}</div><h1>${s.root_domain}</h1>
+      <p class="muted">Risk ${s.risk_score}/100 · ${chip("autonomous pentest", "chip-bad")} · ${fmtDate(s.finished_at, true)}</p></div></div>
+      <div class="actions">
+        <a class="btn btn-primary" href="${href(`/asm/scans/${id}/report`, { format: "html" })}" target="_blank" rel="noopener">Open report</a>
+        <a class="btn" href="${href(`/asm/scans/${id}/report`, { format: "md", download: true })}">Markdown</a>
+        <a class="btn" href="${href(`/asm/scans/${id}/report`, { format: "json", download: true })}">JSON</a></div></div>
+    <p class="muted small">Scope: ${(sum.scope_hosts || [s.root_domain]).map((h) => html`<code>${h}</code> `)}</p>
+    <div class="stats">
+      ${stat("Findings", findings.length, { sub: `across ${Object.keys(sum.by_severity || {}).length} severities` })}
+      ${stat("Critical / high", crit, { tone: crit ? "critical" : "" })}
+      ${stat("OWASP categories", `${sum.categories_tested ?? 0}/10`, { sub: "exercised" })}
+    </div>
+    ${sum.parse_error ? html`<div class="card" style="margin-bottom:16px"><div class="empty">Agent output warning: ${sum.parse_error}</div></div>` : ""}
+    <div class="grid g-21" style="margin-bottom:16px">
+      <div class="card"><div class="card-head"><h2>OWASP Top 10 coverage</h2></div>
+        ${kv(Object.keys(coverage).sort().map((k) => [
+          html`<b class="mono small">${k}</b> ${coverage[k].title}`,
+          html`${chip(coverage[k].status, covChip[coverage[k].status] || "chip")}${coverage[k].notes ? html`<div class="cell-sub">${coverage[k].notes}</div>` : ""}`]))}</div>
+      <div class="card"><div class="card-head"><h2>Findings by severity</h2></div>${sevStrip(sum.by_severity || {})}
+        ${sum.agent_summary ? html`<h3 style="margin-top:16px">Agent summary</h3><p class="small wrap-any">${sum.agent_summary}</p>` : ""}</div>
+    </div>
+    <div class="card"><div class="card-head"><h2>Findings (${findings.length})</h2></div><div id="pt-findings"></div></div>`);
+  mount($("#pt-findings", main), table([
+    { label: "Severity", render: (f) => sevBadge(f.severity) },
+    { label: "Finding", render: (f) => html`<div class="cell-title">${f.title}</div><div class="cell-sub">${f.description}</div>
+        ${f.evidence ? html`<div class="cell-sub mono wrap-any">${truncate(f.evidence, 200)}</div>` : ""}` },
+    { label: "Category", render: (f) => chip(f.category) },
+    { label: "Remediation", render: (f) => html`<span class="small">${f.remediation || "-"}</span>` },
+    { label: "ATT&CK", render: (f) => html`<div class="chips">${f.attack_techniques.map(attackLink)}</div>` },
+  ], findings, { empty: "No findings - the agent reported nothing exploitable within scope." }));
 }
 
 function openAsset(a, findings) {

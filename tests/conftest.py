@@ -9,6 +9,7 @@ os.environ["TW_DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["TW_SCHEDULER_ENABLED"] = "false"
 os.environ["TW_ALERT_WEBHOOK_URL"] = ""
 os.environ["TW_API_KEY"] = ""
+os.environ["TW_PENTEST_ENABLED"] = "false"  # pin off so a developer's local .env can't flip it on in tests
 os.environ["TW_DATA_DIR"] = _tmp
 
 from threatwatch.config import get_settings  # noqa: E402

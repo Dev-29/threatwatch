@@ -290,22 +290,4 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     password_changed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
-
-    sessions: Mapped[list["UserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-
-
-class UserSession(Base):
-    """A browser login. Only the SHA-256 of the cookie token is stored, so a database leak does not leak sessions."""
-
-    __tablename__ = "user_sessions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    ip: Mapped[str | None] = mapped_column(String(64))
-    user_agent: Mapped[str | None] = mapped_column(String(255))
-
-    user: Mapped[User] = relationship(back_populates="sessions")
+    # Authentication is stateless (JWT bearer tokens); there is no server-side session table.

@@ -20,17 +20,20 @@ Authorization: Bearer <key>
 
 The API key has full access, including user management.
 
-**User session (browsers).** `POST /api/v1/auth/login` with `{"username": ..., "password": ...}` sets an HttpOnly,
-`SameSite=Strict` session cookie. Requests that use the cookie and change data (`POST`/`PATCH`/`PUT`/`DELETE`) must also
-send `X-Requested-With: ThreatWatch` (CSRF protection; the bundled UI does this).
+**User login (browsers, interactive clients).** `POST /api/v1/auth/login` with `{"username": ..., "password": ...}`
+returns a signed JWT: `{"token": "<jwt>", "token_type": "bearer", "expires_in": <seconds>, "user": {...}}`. Send it on
+every subsequent request as `Authorization: Bearer <jwt>`. Tokens are **stateless**: they are verified by signature
+and expiry alone, carry the user's id and role, and cannot be revoked before they expire (`TW_JWT_EXPIRY_MINUTES`).
+No CSRF header is needed — the Authorization header is never attached automatically by the browser the way a cookie is.
+For plain-link downloads that cannot set a header, the token is also accepted as `?access_token=<jwt>` (avoid in logs).
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /auth/me` | Current identity: `mode` is `session`, `api_key`, `open` or `null`; `setup_required` while no users exist |
-| `POST /auth/login` | Sign in. Five failures per IP and username within 15 min → `429` with `Retry-After` |
-| `POST /auth/logout` | Sign out (revokes the session) |
-| `POST /auth/setup` | Create the first admin. Only while no users exist; needs the API key if `TW_API_KEY` is set |
-| `POST /auth/password` | Change your own password (`current_password`, `new_password`); signs out your other sessions |
+| `GET /auth/me` | Current identity: `mode` is `jwt`, `api_key`, `open` or `null`; `setup_required` while no users exist |
+| `POST /auth/login` | Sign in; returns a bearer token. Five failures per IP and username within 15 min → `429` with `Retry-After` |
+| `POST /auth/logout` | Client-side only: returns `204`; the client discards its token (a stateless token can't be revoked) |
+| `POST /auth/setup` | Create the first admin and return a token. Only while no users exist; needs the API key if `TW_API_KEY` is set |
+| `POST /auth/password` | Change your own password (`current_password`, `new_password`); returns a fresh token. Tokens issued earlier stay valid until they expire |
 | `GET/POST /users`, `PATCH/DELETE /users/{id}` | User management. Admin role or API key. `PATCH` takes `role`, `disabled` and/or `password` |
 
 Roles: **admin** (everything plus user management), **analyst** (read/write), **viewer** (read-only: any write returns `403`).
@@ -41,7 +44,7 @@ for load-balancer health checks.
 | Status | Meaning |
 |---|---|
 | 401 | Not signed in, or missing/wrong API key |
-| 403 | Role not allowed (viewer write, non-admin user management), or missing `X-Requested-With` on a cookie write |
+| 403 | Role not allowed (viewer write, non-admin user management) |
 | 404 | Unknown object |
 | 409 | Conflict: duplicate asset, or job already running |
 | 422 | Validation error |
